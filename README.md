@@ -659,7 +659,6 @@ function checkAnswerMode1() {
 
     const q = currentQuestions[currentIndex];
     const userVal = document.getElementById("type-answer").value.trim();
-    if (!userVal) return;
 
     // 正誤判定（表記揺れ対応）
     const isCorrect = q.ans.some(ans => ans.toLowerCase() === userVal.toLowerCase());
