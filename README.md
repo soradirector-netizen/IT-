@@ -84,64 +84,6 @@
             background-color: #f0f8ff;
         }
 
-        .user-name-area {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-
-        .user-name-area input[type="text"] {
-            flex: 1;
-            min-width: 220px;
-            padding: 10px;
-            border: 2px solid #ccc;
-            border-radius: 6px;
-            font-size: 16px;
-        }
-
-        .ranking-section {
-            border: 1px solid #e2e8f0;
-            padding: 20px;
-            border-radius: 8px;
-            background-color: #fff;
-            margin-top: 20px;
-        }
-
-        .ranking-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }
-
-        .ranking-table th,
-        .ranking-table td {
-            border: 1px solid #e2e8f0;
-            padding: 10px;
-            text-align: center;
-            font-size: 14px;
-        }
-
-        .ranking-table th {
-            background-color: #f0f4f8;
-        }
-
-        .ranking-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .current-user-label {
-            font-weight: bold;
-            color: var(--secondary-color);
-        }
-
         /* コントロールパネル */
         .control-panel {
             display: flex;
@@ -257,15 +199,6 @@
     <!-- 1. モード選択画面 -->
     <div id="mode-select-screen">
         <h2>学習モードを選択してください</h2>
-        <div class="user-name-area">
-            <label for="user-name-input">ユーザー名:</label>
-            <input type="text" id="user-name-input" placeholder="お名前を入力してください">
-            <button class="btn btn-outline" onclick="saveUserName()">保存</button>
-            <span id="current-user-label" class="current-user-label"></span>
-        </div>
-        <div style="text-align: center; margin-bottom: 10px;">
-            <button class="btn btn-outline" onclick="showRanking()">ランキングを見る</button>
-        </div>
         <div class="mode-selection">
             <div class="mode-card" onclick="selectMode(1)">
                 <h3>例１：空所補充記述問題</h3>
@@ -320,26 +253,6 @@
             <button class="btn btn-success" onclick="finishQuiz()">採点・結果を見る</button>
             <button class="btn" onclick="nextQuestion()">次の問題 →</button>
         </div>
-    </div>
-
-    <div id="ranking-section" class="ranking-section hidden">
-        <div class="ranking-header">
-            <h2>ランキング</h2>
-            <button class="btn btn-outline" onclick="closeRanking()">閉じる</button>
-        </div>
-        <p>例1・例2の正答数の合計で順位付けされます。最新のスコアが反映されます。</p>
-        <table class="ranking-table">
-            <thead>
-                <tr>
-                    <th>順位</th>
-                    <th>ユーザー名</th>
-                    <th>例1 正答数</th>
-                    <th>例2 正答数</th>
-                    <th>合計</th>
-                </tr>
-            </thead>
-            <tbody id="ranking-table-body"></tbody>
-        </table>
     </div>
 
     <!-- 3. 結果画面 -->
@@ -592,23 +505,6 @@ let currentIndex = 0;
 let userAnswers = {}; // { qIndex: { value, isCorrect } }
 let bookmarks = {};   // { mode-id: boolean }
 let isPastOnly = false;
-const userNameStorageKey = "msLegalUserName";
-const rankingStorageKey = "msLegalRanking";
-let currentUserName = localStorage.getItem(userNameStorageKey) || "";
-let leaderboard = loadRanking();
-
-function setCurrentUserLabel() {
-    const label = document.getElementById("current-user-label");
-    if (!label) return;
-    if (currentUserName) {
-        label.innerText = `ログイン中: ${currentUserName}`;
-        document.getElementById("user-name-input").value = currentUserName;
-    } else {
-        label.innerText = "";
-    }
-}
-
-setCurrentUserLabel();
 
 // --- アプリ初期化・画面切り替え ---
 
@@ -619,12 +515,6 @@ function switchModeSelect() {
 }
 
 function selectMode(mode) {
-    if (!currentUserName) {
-        alert("ユーザー名を保存してください。ランキングに反映されます。");
-        document.getElementById("user-name-input").focus();
-        return;
-    }
-
     currentMode = mode;
     isPastOnly = false;
     document.getElementById("past-only-btn").classList.remove("active");
@@ -860,100 +750,6 @@ function finishQuiz() {
 
     document.getElementById("score-percentage").innerText = `${percentage}%`;
     document.getElementById("score-detail").innerText = `${total}問中 ${correctCount}問 正解 （回答済み: ${answeredCount}問）`;
-
-    if (currentUserName) {
-        updateLeaderboard(currentUserName, currentMode, correctCount);
-        refreshRankingTable();
-    }
-}
-
-function saveUserName() {
-    const input = document.getElementById("user-name-input");
-    const name = input.value.trim();
-    if (!name) {
-        alert("ユーザー名を入力してください。");
-        input.focus();
-        return;
-    }
-    currentUserName = name;
-    localStorage.setItem(userNameStorageKey, currentUserName);
-    setCurrentUserLabel();
-    alert(`ユーザー名を保存しました: ${currentUserName}`);
-}
-
-function showRanking() {
-    document.getElementById("mode-select-screen").classList.add("hidden");
-    document.getElementById("quiz-screen").classList.add("hidden");
-    document.getElementById("result-screen").classList.add("hidden");
-    document.getElementById("ranking-section").classList.remove("hidden");
-    refreshRankingTable();
-}
-
-function closeRanking() {
-    document.getElementById("ranking-section").classList.add("hidden");
-    document.getElementById("mode-select-screen").classList.remove("hidden");
-}
-
-function updateLeaderboard(name, mode, correctCount) {
-    if (!name) return;
-
-    const record = leaderboard.find(item => item.userName === name) || {
-        userName: name,
-        mode1Correct: 0,
-        mode2Correct: 0
-    };
-
-    if (mode === 1) {
-        record.mode1Correct = Math.max(record.mode1Correct, correctCount);
-    } else {
-        record.mode2Correct = Math.max(record.mode2Correct, correctCount);
-    }
-
-    if (!leaderboard.includes(record)) {
-        leaderboard.push(record);
-    }
-
-    leaderboard.sort((a, b) => {
-        const aTotal = (a.mode1Correct || 0) + (a.mode2Correct || 0);
-        const bTotal = (b.mode1Correct || 0) + (b.mode2Correct || 0);
-        if (bTotal !== aTotal) return bTotal - aTotal;
-        return a.userName.localeCompare(b.userName, "ja");
-    });
-
-    localStorage.setItem(rankingStorageKey, JSON.stringify(leaderboard));
-}
-
-function loadRanking() {
-    try {
-        const rawValue = localStorage.getItem(rankingStorageKey);
-        if (!rawValue) return [];
-        return JSON.parse(rawValue);
-    } catch (e) {
-        console.error("ランキングの読み込みに失敗しました", e);
-        return [];
-    }
-}
-
-function refreshRankingTable() {
-    const tbody = document.getElementById("ranking-table-body");
-    tbody.innerHTML = "";
-    if (!leaderboard || leaderboard.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5">ランキングデータがありません。</td></tr>`;
-        return;
-    }
-
-    leaderboard.forEach((item, index) => {
-        const total = (item.mode1Correct || 0) + (item.mode2Correct || 0);
-        tbody.insertAdjacentHTML("beforeend", `
-            <tr>
-                <td>${index + 1}</td>
-                <td>${item.userName}</td>
-                <td>${item.mode1Correct || 0}</td>
-                <td>${item.mode2Correct || 0}</td>
-                <td>${total}</td>
-            </tr>
-        `);
-    });
 }
 
 function restartQuiz() {
