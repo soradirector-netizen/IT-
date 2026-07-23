@@ -267,7 +267,7 @@
             <p id="score-detail" style="font-size: 18px; color: #666;"></p>
         </div>
         <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
-            <button class="btn btn-danger" id="retry-mistakes-btn" onclick="retryMistakesOrBookmarks()">間違えた問題＋苦手問題をまとめて復習</button>
+            <button class="btn btn-danger" id="retry-mistakes-btn" onclick="reviewWrongQuestions()">間違えた問題を復習する</button>
             <button class="btn btn-success" onclick="restartQuiz()">最初からやり直す</button>
             <button class="btn btn-warning" onclick="switchModeSelect()">モード選択に戻る</button>
         </div>
@@ -753,27 +753,28 @@ function renderQuestion() {
     const inputField = document.getElementById("type-answer");
     const answerKey = getStateKey(q.mode || currentMode, q.id);
     const savedAnswer = userAnswers[answerKey];
+    const isWrongReview = savedAnswer && savedAnswer.isCorrect === false && currentMode === 3;
 
     if (q.ans) {
         // 例1：記述モード
         document.getElementById("mode1-input").classList.remove("hidden");
         document.getElementById("mode2-options").classList.add("hidden");
         inputField.value = savedAnswer?.value || "";
-        inputField.disabled = !!savedAnswer;
+        inputField.disabled = savedAnswer && !isWrongReview;
 
-        if (savedAnswer) {
+        if (savedAnswer && !(savedAnswer.isCorrect === false && currentMode === 3)) {
             showFeedbackMode1(savedAnswer.isCorrect);
         }
     } else {
         // 例2：シチュエーション選択モード
         document.getElementById("mode1-input").classList.add("hidden");
         document.getElementById("mode2-options").classList.remove("hidden");
-        renderMode2Options(q);
+        renderMode2Options(q, isWrongReview);
     }
 }
 
 // 例2 ダミー選択肢（他の問題の条文から3つ抽出）をランダム生成
-function renderMode2Options(q) {
+function renderMode2Options(q, isWrongReview = false) {
     const optionsContainer = document.getElementById("mode2-options");
     optionsContainer.innerHTML = "";
     const answerKey = getStateKey(q.mode || currentMode, q.id);
@@ -796,7 +797,7 @@ function renderMode2Options(q) {
         
         btn.onclick = () => checkAnswerMode2(choice.article === q.article, q);
         
-        if (savedAnswer) {
+        if (savedAnswer && !isWrongReview) {
             btn.disabled = true;
             if (choice.article === q.article) {
                 btn.style.borderColor = "var(--success-color)";
@@ -807,7 +808,7 @@ function renderMode2Options(q) {
         optionsContainer.appendChild(btn);
     });
 
-    if (savedAnswer) {
+    if (savedAnswer && !isWrongReview) {
         showFeedbackMode2(savedAnswer.isCorrect, q);
     }
 }
@@ -817,7 +818,7 @@ function renderMode2Options(q) {
 function checkAnswerMode1() {
     const q = currentQuestions[currentIndex];
     const key = getStateKey(q.mode || currentMode, q.id);
-    if (userAnswers[key]) return; // 既に回答済み
+    if (userAnswers[key] && userAnswers[key].isCorrect) return; // 既に正解済み
 
     const userVal = document.getElementById("type-answer").value.trim();
 
@@ -846,7 +847,7 @@ function showFeedbackMode1(isCorrect) {
 
 function checkAnswerMode2(isCorrect, q) {
     const key = getStateKey(q.mode || currentMode, q.id);
-    if (userAnswers[key]) return; // 既に回答済み
+    if (userAnswers[key] && userAnswers[key].isCorrect) return; // 既に正解済み
 
     userAnswers[key] = { isCorrect: isCorrect };
     saveAppState();
@@ -928,15 +929,15 @@ function restartQuiz() {
     renderQuestion();
 }
 
-// 間違えた問題 ＋ 苦手チェック問題をまとめて復習
-function retryMistakesOrBookmarks() {
+// 間違えた問題だけを復習
+function reviewWrongQuestions() {
     const reviewQuestions = currentQuestions.filter(q => {
         const key = getStateKey(q.mode || currentMode, q.id);
-        return !!bookmarks[key];
+        return userAnswers[key] && userAnswers[key].isCorrect === false;
     });
 
     if (reviewQuestions.length === 0) {
-        alert("復習する問題（チェックした問題）がありません！");
+        alert("間違えた問題がありません。まずは問題を解答してから復習してください。");
         return;
     }
 
