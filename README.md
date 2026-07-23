@@ -501,10 +501,99 @@ const rawDataMode2 = [
 // --- アプリケーションの状態管理 ---
 let currentMode = 1;
 let currentQuestions = [];
+let currentQuestionIds = [];
 let currentIndex = 0;
-let userAnswers = {}; // { qIndex: { value, isCorrect } }
-let bookmarks = {};   // { mode-id: boolean }
+let userAnswers = {}; // { "mode-id": { value, isCorrect } }
+let bookmarks = {};   // { "mode-id": boolean }
 let isPastOnly = false;
+const STORAGE_KEY = "civil-law-quiz-state";
+
+function getStateKey(mode, id) {
+    return `${mode}-${id}`;
+}
+
+function restoreQuestionList() {
+    const sourceData = currentMode === 1 ? rawDataMode1 : rawDataMode2;
+    currentQuestions = currentQuestionIds
+        .map(id => sourceData.find(q => q.id === id))
+        .filter(Boolean);
+
+    if (currentQuestions.length !== currentQuestionIds.length) {
+        currentQuestions = [...sourceData];
+        currentQuestionIds = currentQuestions.map(q => q.id);
+        currentIndex = 0;
+    }
+}
+
+function resumeSavedSession() {
+    restoreQuestionList();
+    document.getElementById("mode-select-screen").classList.add("hidden");
+    document.getElementById("quiz-screen").classList.remove("hidden");
+    document.getElementById("past-only-btn").classList.toggle("active", isPastOnly);
+
+    if (currentMode === 1) {
+        document.getElementById("mode1-input").classList.remove("hidden");
+        document.getElementById("mode2-options").classList.add("hidden");
+    } else {
+        document.getElementById("mode1-input").classList.add("hidden");
+        document.getElementById("mode2-options").classList.remove("hidden");
+    }
+
+    renderQuestion();
+}
+
+function loadAppState() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (saved && typeof saved === "object") {
+            if (saved.userAnswers && typeof saved.userAnswers === "object") {
+                userAnswers = saved.userAnswers;
+            }
+            if (saved.bookmarks && typeof saved.bookmarks === "object") {
+                bookmarks = saved.bookmarks;
+            }
+            if (saved.currentMode === 1 || saved.currentMode === 2) {
+                currentMode = saved.currentMode;
+            }
+            if (typeof saved.currentIndex === "number") {
+                currentIndex = saved.currentIndex;
+            }
+            if (typeof saved.isPastOnly === "boolean") {
+                isPastOnly = saved.isPastOnly;
+            }
+            if (Array.isArray(saved.currentQuestionIds)) {
+                currentQuestionIds = saved.currentQuestionIds;
+            }
+        }
+    } catch (e) {
+        console.warn("State load failed", e);
+    }
+}
+
+function saveAppState() {
+    try {
+        const payload = {
+            userAnswers,
+            bookmarks,
+            currentMode,
+            currentQuestionIds,
+            currentIndex,
+            isPastOnly
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch (e) {
+        console.warn("State save failed", e);
+    }
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+    loadAppState();
+    if (currentQuestionIds.length > 0) {
+        resumeSavedSession();
+    }
+});
 
 // --- アプリ初期化・画面切り替え ---
 
@@ -522,9 +611,10 @@ function selectMode(mode) {
     // データ初期化
     let sourceData = mode === 1 ? rawDataMode1 : rawDataMode2;
     currentQuestions = [...sourceData];
-    
+    currentQuestionIds = currentQuestions.map(q => q.id);
     currentIndex = 0;
-    userAnswers = {};
+
+    saveAppState();
 
     document.getElementById("mode-select-screen").classList.add("hidden");
     document.getElementById("quiz-screen").classList.remove("hidden");
@@ -540,6 +630,7 @@ function selectMode(mode) {
     renderQuestion();
 }
 
+
 // --- 問題ランダム＆絞り込み機能 ---
 
 function shuffleQuestions() {
@@ -547,8 +638,9 @@ function shuffleQuestions() {
         const j = Math.floor(Math.random() * (i + 1));
         [currentQuestions[i], currentQuestions[j]] = [currentQuestions[j], currentQuestions[i]];
     }
+    currentQuestionIds = currentQuestions.map(q => q.id);
     currentIndex = 0;
-    userAnswers = {};
+    saveAppState();
     renderQuestion();
 }
 
@@ -563,8 +655,9 @@ function togglePastOnly() {
     } else {
         currentQuestions = [...sourceData];
     }
+    currentQuestionIds = currentQuestions.map(q => q.id);
     currentIndex = 0;
-    userAnswers = {};
+    saveAppState();
     renderQuestion();
 }
 
@@ -602,11 +695,13 @@ function renderQuestion() {
     if (currentMode === 1) {
         // 例1：記述モード
         const inputField = document.getElementById("type-answer");
-        inputField.value = userAnswers[currentIndex]?.value || "";
-        inputField.disabled = false;
+        const answerKey = getStateKey(currentMode, q.id);
+        const savedAnswer = userAnswers[answerKey];
+        inputField.value = savedAnswer?.value || "";
+        inputField.disabled = !!savedAnswer;
 
-        if (userAnswers[currentIndex]) {
-            showFeedbackMode1(userAnswers[currentIndex].isCorrect);
+        if (savedAnswer) {
+            showFeedbackMode1(savedAnswer.isCorrect);
         }
     } else {
         // 例2：シチュエーション選択モード
@@ -618,6 +713,8 @@ function renderQuestion() {
 function renderMode2Options(q) {
     const optionsContainer = document.getElementById("mode2-options");
     optionsContainer.innerHTML = "";
+    const answerKey = getStateKey(currentMode, q.id);
+    const savedAnswer = userAnswers[answerKey];
 
     // 正解以外の他の問題からランダムで3個の不正確選択肢を選ぶ
     const otherQuestions = rawDataMode2.filter(item => item.article !== q.article);
@@ -636,7 +733,7 @@ function renderMode2Options(q) {
         
         btn.onclick = () => checkAnswerMode2(choice.article === q.article, q);
         
-        if (userAnswers[currentIndex]) {
+        if (savedAnswer) {
             btn.disabled = true;
             if (choice.article === q.article) {
                 btn.style.borderColor = "var(--success-color)";
@@ -647,22 +744,24 @@ function renderMode2Options(q) {
         optionsContainer.appendChild(btn);
     });
 
-    if (userAnswers[currentIndex]) {
-        showFeedbackMode2(userAnswers[currentIndex].isCorrect, q);
+    if (savedAnswer) {
+        showFeedbackMode2(savedAnswer.isCorrect, q);
     }
 }
 
 // --- 回答チェック処理 ---
 
 function checkAnswerMode1() {
-    if (userAnswers[currentIndex]) return; // 既に回答済み
-
     const q = currentQuestions[currentIndex];
+    const key = getStateKey(currentMode, q.id);
+    if (userAnswers[key]) return; // 既に回答済み
+
     const userVal = document.getElementById("type-answer").value.trim();
 
     // 正誤判定（表記揺れ対応）
     const isCorrect = q.ans.some(ans => ans.toLowerCase() === userVal.toLowerCase());
-    userAnswers[currentIndex] = { value: userVal, isCorrect: isCorrect };
+    userAnswers[key] = { value: userVal, isCorrect: isCorrect };
+    saveAppState();
 
     document.getElementById("type-answer").disabled = true;
     showFeedbackMode1(isCorrect);
@@ -683,9 +782,11 @@ function showFeedbackMode1(isCorrect) {
 }
 
 function checkAnswerMode2(isCorrect, q) {
-    if (userAnswers[currentIndex]) return; // 既に回答済み
+    const key = getStateKey(currentMode, q.id);
+    if (userAnswers[key]) return; // 既に回答済み
 
-    userAnswers[currentIndex] = { isCorrect: isCorrect };
+    userAnswers[key] = { isCorrect: isCorrect };
+    saveAppState();
     
     // 全選択肢を無効化
     const btns = document.querySelectorAll("#mode2-options .option-btn");
@@ -711,8 +812,9 @@ function showFeedbackMode2(isCorrect, q) {
 
 function toggleBookmark() {
     const q = currentQuestions[currentIndex];
-    const key = `${currentMode}-${q.id}`;
+    const key = getStateKey(currentMode, q.id);
     bookmarks[key] = !bookmarks[key];
+    saveAppState();
     document.getElementById("bookmark-toggle").classList.toggle("active", bookmarks[key]);
 }
 
@@ -721,6 +823,7 @@ function toggleBookmark() {
 function prevQuestion() {
     if (currentIndex > 0) {
         currentIndex--;
+        saveAppState();
         renderQuestion();
     }
 }
@@ -728,6 +831,7 @@ function prevQuestion() {
 function nextQuestion() {
     if (currentIndex < currentQuestions.length - 1) {
         currentIndex++;
+        saveAppState();
         renderQuestion();
     }
 }
@@ -762,9 +866,10 @@ function restartQuiz() {
 
 // 間違えた問題 ＋ 苦手チェック問題をまとめて復習
 function retryMistakesOrBookmarks() {
-    const reviewQuestions = currentQuestions.filter((q, index) => {
-        const isWrong = userAnswers[index] && !userAnswers[index].isCorrect;
-        const isBookmarked = !!bookmarks[`${currentMode}-${q.id}`];
+    const reviewQuestions = currentQuestions.filter(q => {
+        const key = getStateKey(currentMode, q.id);
+        const isWrong = userAnswers[key] && !userAnswers[key].isCorrect;
+        const isBookmarked = !!bookmarks[key];
         return isWrong || isBookmarked;
     });
 
@@ -774,8 +879,9 @@ function retryMistakesOrBookmarks() {
     }
 
     currentQuestions = reviewQuestions;
-    userAnswers = {};
+    currentQuestionIds = currentQuestions.map(q => q.id);
     currentIndex = 0;
+    saveAppState();
 
     document.getElementById("result-screen").classList.add("hidden");
     document.getElementById("quiz-screen").classList.remove("hidden");
