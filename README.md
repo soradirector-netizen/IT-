@@ -760,9 +760,9 @@ function renderQuestion() {
         document.getElementById("mode1-input").classList.remove("hidden");
         document.getElementById("mode2-options").classList.add("hidden");
         inputField.value = savedAnswer?.value || "";
-        inputField.disabled = savedAnswer && !isWrongReview;
+        inputField.disabled = savedAnswer && savedAnswer.isCorrect !== false;
 
-        if (savedAnswer && !(savedAnswer.isCorrect === false && currentMode === 3)) {
+        if (savedAnswer) {
             showFeedbackMode1(savedAnswer.isCorrect);
         }
     } else {
@@ -808,7 +808,7 @@ function renderMode2Options(q, isWrongReview = false) {
         optionsContainer.appendChild(btn);
     });
 
-    if (savedAnswer && !isWrongReview) {
+    if (savedAnswer) {
         showFeedbackMode2(savedAnswer.isCorrect, q);
     }
 }
