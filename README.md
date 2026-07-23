@@ -208,6 +208,10 @@
                 <h3>例２：シチュエーション問題（条文選択）</h3>
                 <p>設例に対応する民法条文を4つの選択肢から選ぶモードです。（全54問）</p>
             </div>
+            <div class="mode-card" onclick="selectReviewBookmarks()">
+                <h3>チェックした問題を復習</h3>
+                <p>例1・例2でチェックした問題だけをまとめて復習します。</p>
+            </div>
         </div>
     </div>
 
@@ -512,15 +516,30 @@ function getStateKey(mode, id) {
     return `${mode}-${id}`;
 }
 
+function parseStateKey(key) {
+    const [modeStr, idStr] = key.split("-");
+    return { mode: Number(modeStr), id: Number(idStr) };
+}
+
 function restoreQuestionList() {
-    const sourceData = currentMode === 1 ? rawDataMode1 : rawDataMode2;
     currentQuestions = currentQuestionIds
-        .map(id => sourceData.find(q => q.id === id))
+        .map(key => {
+            const { mode, id } = parseStateKey(key);
+            const sourceData = mode === 1 ? rawDataMode1 : rawDataMode2;
+            const question = sourceData.find(q => q.id === id);
+            return question ? { ...question, mode } : null;
+        })
         .filter(Boolean);
 
     if (currentQuestions.length !== currentQuestionIds.length) {
-        currentQuestions = [...sourceData];
-        currentQuestionIds = currentQuestions.map(q => q.id);
+        if (currentMode === 1 || currentMode === 2) {
+            const sourceData = currentMode === 1 ? rawDataMode1 : rawDataMode2;
+            currentQuestions = [...sourceData].map(q => ({ ...q, mode: currentMode }));
+            currentQuestionIds = currentQuestions.map(q => getStateKey(currentMode, q.id));
+        } else {
+            currentQuestions = getReviewBookmarkedQuestions();
+            currentQuestionIds = currentQuestions.map(q => getStateKey(q.mode, q.id));
+        }
         currentIndex = 0;
     }
 }
@@ -530,14 +549,6 @@ function resumeSavedSession() {
     document.getElementById("mode-select-screen").classList.add("hidden");
     document.getElementById("quiz-screen").classList.remove("hidden");
     document.getElementById("past-only-btn").classList.toggle("active", isPastOnly);
-
-    if (currentMode === 1) {
-        document.getElementById("mode1-input").classList.remove("hidden");
-        document.getElementById("mode2-options").classList.add("hidden");
-    } else {
-        document.getElementById("mode1-input").classList.add("hidden");
-        document.getElementById("mode2-options").classList.remove("hidden");
-    }
 
     renderQuestion();
 }
@@ -554,7 +565,7 @@ function loadAppState() {
             if (saved.bookmarks && typeof saved.bookmarks === "object") {
                 bookmarks = saved.bookmarks;
             }
-            if (saved.currentMode === 1 || saved.currentMode === 2) {
+            if (saved.currentMode === 1 || saved.currentMode === 2 || saved.currentMode === 3) {
                 currentMode = saved.currentMode;
             }
             if (typeof saved.currentIndex === "number") {
@@ -610,8 +621,8 @@ function selectMode(mode) {
     
     // データ初期化
     let sourceData = mode === 1 ? rawDataMode1 : rawDataMode2;
-    currentQuestions = [...sourceData];
-    currentQuestionIds = currentQuestions.map(q => q.id);
+    currentQuestions = [...sourceData].map(q => ({ ...q, mode }));
+    currentQuestionIds = currentQuestions.map(q => getStateKey(mode, q.id));
     currentIndex = 0;
 
     saveAppState();
@@ -630,6 +641,43 @@ function selectMode(mode) {
     renderQuestion();
 }
 
+function getReviewBookmarkedQuestions() {
+    const bookmarkedKeys = Object.keys(bookmarks).filter(key => bookmarks[key]);
+    const questions = [];
+
+    bookmarkedKeys.forEach(key => {
+        const { mode, id } = parseStateKey(key);
+        const sourceData = mode === 1 ? rawDataMode1 : rawDataMode2;
+        const question = sourceData.find(q => q.id === id);
+        if (question) {
+            questions.push({ ...question, mode });
+        }
+    });
+
+    return questions;
+}
+
+function selectReviewBookmarks() {
+    const reviewQuestions = getReviewBookmarkedQuestions();
+    if (reviewQuestions.length === 0) {
+        alert("チェックした問題がありません。まずは例1・例2でチェックをつけてください。");
+        return;
+    }
+
+    currentMode = 3;
+    isPastOnly = false;
+    document.getElementById("past-only-btn").classList.remove("active");
+
+    currentQuestions = reviewQuestions;
+    currentQuestionIds = currentQuestions.map(q => getStateKey(q.mode, q.id));
+    currentIndex = 0;
+
+    saveAppState();
+
+    document.getElementById("mode-select-screen").classList.add("hidden");
+    document.getElementById("quiz-screen").classList.remove("hidden");
+    renderQuestion();
+}
 
 // --- 問題ランダム＆絞り込み機能 ---
 
@@ -638,7 +686,7 @@ function shuffleQuestions() {
         const j = Math.floor(Math.random() * (i + 1));
         [currentQuestions[i], currentQuestions[j]] = [currentQuestions[j], currentQuestions[i]];
     }
-    currentQuestionIds = currentQuestions.map(q => q.id);
+    currentQuestionIds = currentQuestions.map(q => getStateKey(q.mode || currentMode, q.id));
     currentIndex = 0;
     saveAppState();
     renderQuestion();
@@ -649,13 +697,23 @@ function togglePastOnly() {
     const btn = document.getElementById("past-only-btn");
     btn.classList.toggle("active", isPastOnly);
 
-    let sourceData = currentMode === 1 ? rawDataMode1 : rawDataMode2;
-    if (isPastOnly) {
-        currentQuestions = sourceData.filter(q => q.past);
+    if (currentMode === 1 || currentMode === 2) {
+        let sourceData = currentMode === 1 ? rawDataMode1 : rawDataMode2;
+        if (isPastOnly) {
+            currentQuestions = sourceData.filter(q => q.past).map(q => ({ ...q, mode: currentMode }));
+        } else {
+            currentQuestions = [...sourceData].map(q => ({ ...q, mode: currentMode }));
+        }
     } else {
-        currentQuestions = [...sourceData];
+        const reviewQuestions = getReviewBookmarkedQuestions();
+        if (isPastOnly) {
+            currentQuestions = reviewQuestions.filter(q => q.past);
+        } else {
+            currentQuestions = reviewQuestions;
+        }
     }
-    currentQuestionIds = currentQuestions.map(q => q.id);
+
+    currentQuestionIds = currentQuestions.map(q => getStateKey(q.mode, q.id));
     currentIndex = 0;
     saveAppState();
     renderQuestion();
@@ -670,7 +728,7 @@ function renderQuestion() {
     }
 
     const q = currentQuestions[currentIndex];
-    const bookmarkKey = `${currentMode}-${q.id}`;
+    const bookmarkKey = getStateKey(q.mode || currentMode, q.id);
 
     // UI更新
     document.getElementById("progress-text").innerText = `問題 ${currentIndex + 1} / ${currentQuestions.length}`;
@@ -692,11 +750,14 @@ function renderQuestion() {
     feedbackArea.classList.add("hidden");
     feedbackArea.className = "feedback hidden";
 
-    if (currentMode === 1) {
+    const inputField = document.getElementById("type-answer");
+    const answerKey = getStateKey(q.mode || currentMode, q.id);
+    const savedAnswer = userAnswers[answerKey];
+
+    if (q.ans) {
         // 例1：記述モード
-        const inputField = document.getElementById("type-answer");
-        const answerKey = getStateKey(currentMode, q.id);
-        const savedAnswer = userAnswers[answerKey];
+        document.getElementById("mode1-input").classList.remove("hidden");
+        document.getElementById("mode2-options").classList.add("hidden");
         inputField.value = savedAnswer?.value || "";
         inputField.disabled = !!savedAnswer;
 
@@ -705,6 +766,8 @@ function renderQuestion() {
         }
     } else {
         // 例2：シチュエーション選択モード
+        document.getElementById("mode1-input").classList.add("hidden");
+        document.getElementById("mode2-options").classList.remove("hidden");
         renderMode2Options(q);
     }
 }
@@ -713,7 +776,7 @@ function renderQuestion() {
 function renderMode2Options(q) {
     const optionsContainer = document.getElementById("mode2-options");
     optionsContainer.innerHTML = "";
-    const answerKey = getStateKey(currentMode, q.id);
+    const answerKey = getStateKey(q.mode || currentMode, q.id);
     const savedAnswer = userAnswers[answerKey];
 
     // 正解以外の他の問題からランダムで3個の不正確選択肢を選ぶ
@@ -753,7 +816,7 @@ function renderMode2Options(q) {
 
 function checkAnswerMode1() {
     const q = currentQuestions[currentIndex];
-    const key = getStateKey(currentMode, q.id);
+    const key = getStateKey(q.mode || currentMode, q.id);
     if (userAnswers[key]) return; // 既に回答済み
 
     const userVal = document.getElementById("type-answer").value.trim();
@@ -782,7 +845,7 @@ function showFeedbackMode1(isCorrect) {
 }
 
 function checkAnswerMode2(isCorrect, q) {
-    const key = getStateKey(currentMode, q.id);
+    const key = getStateKey(q.mode || currentMode, q.id);
     if (userAnswers[key]) return; // 既に回答済み
 
     userAnswers[key] = { isCorrect: isCorrect };
@@ -812,7 +875,7 @@ function showFeedbackMode2(isCorrect, q) {
 
 function toggleBookmark() {
     const q = currentQuestions[currentIndex];
-    const key = getStateKey(currentMode, q.id);
+    const key = getStateKey(q.mode || currentMode, q.id);
     bookmarks[key] = !bookmarks[key];
     saveAppState();
     document.getElementById("bookmark-toggle").classList.toggle("active", bookmarks[key]);
@@ -839,6 +902,7 @@ function nextQuestion() {
 // --- 採点＆結果機能 ---
 
 function finishQuiz() {
+    saveAppState();
     document.getElementById("quiz-screen").classList.add("hidden");
     document.getElementById("result-screen").classList.remove("hidden");
 
@@ -867,19 +931,17 @@ function restartQuiz() {
 // 間違えた問題 ＋ 苦手チェック問題をまとめて復習
 function retryMistakesOrBookmarks() {
     const reviewQuestions = currentQuestions.filter(q => {
-        const key = getStateKey(currentMode, q.id);
-        const isWrong = userAnswers[key] && !userAnswers[key].isCorrect;
-        const isBookmarked = !!bookmarks[key];
-        return isWrong || isBookmarked;
+        const key = getStateKey(q.mode || currentMode, q.id);
+        return !!bookmarks[key];
     });
 
     if (reviewQuestions.length === 0) {
-        alert("復習する問題（間違い、または苦手チェックした問題）がありません！完璧です！");
+        alert("復習する問題（チェックした問題）がありません！");
         return;
     }
 
     currentQuestions = reviewQuestions;
-    currentQuestionIds = currentQuestions.map(q => q.id);
+    currentQuestionIds = currentQuestions.map(q => getStateKey(q.mode || currentMode, q.id));
     currentIndex = 0;
     saveAppState();
 
